@@ -1,7 +1,6 @@
 const int SENSOR_PIN = A0;
-const int RELAY_PIN  = 2;   // relay control pin (NOT PWM)
+const int RELAY_PIN  = 2;
 
-// Moisture thresholds (hysteresis)
 const int DRY_THRESHOLD = 550; // pump ON at/above this
 const int WET_THRESHOLD = 430; // pump OFF at/below this
 
@@ -33,5 +32,5 @@ void loop() {
   Serial.print(" pump=");
   Serial.println(pumpOn ? "ON" : "OFF");
 
-  delay(1000);
+  delay(5000);
 }
