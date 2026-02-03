@@ -1,36 +1,95 @@
+// ---------- CONFIG ----------
 const int SENSOR_PIN = A0;
 const int RELAY_PIN  = 2;
 
-const int DRY_THRESHOLD = 550; // pump ON at/above this
-const int WET_THRESHOLD = 430; // pump OFF at/below this
+const int DRY_THRESHOLD = 550;
+const int WET_THRESHOLD = 430;
+
+const bool PUMP_ENABLED = false;
+
+const int SAMPLE_COUNT = 5;
+const unsigned long SAMPLE_INTERVAL_MS = 1000;
+
+// ---------- STATE ----------
+int samples[SAMPLE_COUNT];
+int sampleIndex = 0;
 
 bool pumpOn = false;
+unsigned long lastSampleMs = 0;
 
+// ---------- RELAY ----------
+void relayOn()  { digitalWrite(RELAY_PIN, LOW);  } // active-LOW
+void relayOff() { digitalWrite(RELAY_PIN, HIGH); }
+
+// ---------- SAMPLING ----------
+void recordSample(int value) {
+  samples[sampleIndex] = value;
+  sampleIndex = (sampleIndex + 1) % SAMPLE_COUNT;
+}
+
+int sampleCount() {
+  return sampleIndex == 0 ? SAMPLE_COUNT : sampleIndex;
+}
+
+int averageMoisture() {
+  int count = sampleCount();
+  if (count == 0) return 0;
+
+  long sum = 0;
+  for (int i = 0; i < count; i++) {
+    sum += samples[i];
+  }
+  return sum / count;
+}
+
+// ---------- CONTROL ----------
+void updatePumpState(int avgMoisture) {
+  bool wantOn  = (!pumpOn && avgMoisture >= DRY_THRESHOLD);
+  bool wantOff = ( pumpOn && avgMoisture <= WET_THRESHOLD);
+
+  if (!PUMP_ENABLED) {
+    pumpOn = false;
+    relayOff();
+    return;
+  }
+
+  if (wantOn) {
+    pumpOn = true;
+    relayOn();
+  }
+  else if (wantOff) {
+    pumpOn = false;
+    relayOff();
+  }
+}
+
+// ---------- LOGGING ----------
+void logStatus(int raw, int avg) {
+  Serial.print("raw=");
+  Serial.print(raw);
+  Serial.print(" avg=");
+  Serial.print(avg);
+  Serial.print(" pump=");
+  Serial.println(pumpOn ? "ON" : "OFF");
+}
+
+// ---------- ARDUINO ----------
 void setup() {
   Serial.begin(9600);
-
   pinMode(RELAY_PIN, OUTPUT);
-
-  // active-LOW relay: HIGH = OFF
-  digitalWrite(RELAY_PIN, HIGH);
+  relayOff();
 }
 
 void loop() {
-  int moisture = analogRead(SENSOR_PIN);
+  unsigned long now = millis();
+  if (now - lastSampleMs < SAMPLE_INTERVAL_MS) return;
 
-  if (!pumpOn && moisture >= DRY_THRESHOLD) {
-    pumpOn = true;
-    digitalWrite(RELAY_PIN, LOW);   // relay ON → pump ON
-  } 
-  else if (pumpOn && moisture <= WET_THRESHOLD) {
-    pumpOn = false;
-    digitalWrite(RELAY_PIN, HIGH);  // relay OFF → pump OFF
-  }
+  lastSampleMs = now;
 
-  Serial.print("raw=");
-  Serial.print(moisture);
-  Serial.print(" pump=");
-  Serial.println(pumpOn ? "ON" : "OFF");
+  int raw = analogRead(SENSOR_PIN);
+  recordSample(raw);
 
-  delay(5000);
+  int avg = averageMoisture();
+  updatePumpState(avg);
+  logStatus(raw, avg);
 }
