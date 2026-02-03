@@ -5,30 +5,36 @@ const int RELAY_PIN  = 2;
 const int DRY_THRESHOLD = 550;
 const int WET_THRESHOLD = 430;
 
-const bool PUMP_ENABLED = false;
+const bool DRY_RUN_MODE = true;
 
-const int SAMPLE_COUNT = 5;
-const unsigned long SAMPLE_INTERVAL_MS = 1000;
+const int SAMPLE_COUNT = 3;
+const unsigned long SAMPLE_INTERVAL_MS = 800;
 
 // ---------- STATE ----------
 int samples[SAMPLE_COUNT];
 int sampleIndex = 0;
+bool samplesWrapped = false;
 
 bool pumpOn = false;
 unsigned long lastSampleMs = 0;
 
 // ---------- RELAY ----------
-void relayOn()  { digitalWrite(RELAY_PIN, LOW);  } // active-LOW
-void relayOff() { digitalWrite(RELAY_PIN, HIGH); }
+inline void relayOn()  { digitalWrite(RELAY_PIN, LOW);  } // active-LOW
+inline void relayOff() { digitalWrite(RELAY_PIN, HIGH); }
 
 // ---------- SAMPLING ----------
 void recordSample(int value) {
   samples[sampleIndex] = value;
-  sampleIndex = (sampleIndex + 1) % SAMPLE_COUNT;
+  sampleIndex++;
+
+  if (sampleIndex >= SAMPLE_COUNT) {
+    sampleIndex = 0;
+    samplesWrapped = true;
+  }
 }
 
 int sampleCount() {
-  return sampleIndex == 0 ? SAMPLE_COUNT : sampleIndex;
+  return samplesWrapped ? SAMPLE_COUNT : sampleIndex;
 }
 
 int averageMoisture() {
@@ -42,24 +48,35 @@ int averageMoisture() {
   return sum / count;
 }
 
+bool shouldTurnPumpOn(int avgMoisture) {
+  return !pumpOn && avgMoisture >= DRY_THRESHOLD;
+}
+
+bool shouldTurnPumpOff(int avgMoisture) {
+  return pumpOn && avgMoisture <= WET_THRESHOLD;
+}
+
 // ---------- CONTROL ----------
 void updatePumpState(int avgMoisture) {
-  bool wantOn  = (!pumpOn && avgMoisture >= DRY_THRESHOLD);
-  bool wantOff = ( pumpOn && avgMoisture <= WET_THRESHOLD);
+  if (shouldTurnPumpOn(avgMoisture)) {
+    pumpOn = true;
 
-  if (!PUMP_ENABLED) {
-    pumpOn = false;
-    relayOff();
+    if (DRY_RUN_MODE) {
+      Serial.println("DRY-RUN: pump ON");
+    } else {
+      relayOn();
+    }
     return;
   }
 
-  if (wantOn) {
-    pumpOn = true;
-    relayOn();
-  }
-  else if (wantOff) {
+  if (shouldTurnPumpOff(avgMoisture)) {
     pumpOn = false;
-    relayOff();
+
+    if (DRY_RUN_MODE) {
+      Serial.println("DRY-RUN: pump OFF");
+    } else {
+      relayOff();
+    }
   }
 }
 
